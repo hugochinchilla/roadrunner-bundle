@@ -4,13 +4,12 @@ namespace Baldinof\RoadRunnerBundle\Http\Middleware;
 
 use Baldinof\RoadRunnerBundle\Exception\HeadersAlreadySentException;
 use Baldinof\RoadRunnerBundle\Http\IteratorMiddlewareInterface;
-use Dflydev\FigCookies\FigRequestCookies;
-use Dflydev\FigCookies\FigResponseCookies;
-use Dflydev\FigCookies\Modifier\SameSite;
-use Dflydev\FigCookies\SetCookie;
+use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Yiisoft\Cookies\Cookie;
+use Yiisoft\Cookies\CookieCollection;
 
 class NativeSessionMiddleware implements IteratorMiddlewareInterface
 {
@@ -22,7 +21,7 @@ class NativeSessionMiddleware implements IteratorMiddlewareInterface
 
         unset($_SESSION);
 
-        $oldId = FigRequestCookies::get($request, session_name())->getValue() ?: '';
+        $oldId = self::cookiesFromRequest($request)->getValue(session_name(), '');
 
         session_id($oldId); // Set to current session or reset to nothing
 
@@ -44,26 +43,47 @@ class NativeSessionMiddleware implements IteratorMiddlewareInterface
         }
     }
 
+    private static function cookiesFromRequest(ServerRequest $request): CookieCollection
+    {
+        $cookies = [];
+        $allCookiesString = $request->getHeaderLine('Cookie');
+
+        foreach (self::splitOnAttributeDelimiter($allCookiesString) as $cookieString)
+        if ($cookieString) {
+            $cookies[] = Cookie::fromCookieString($cookieString);
+        }
+
+        return new CookieCollection($cookies);
+    }
+
+    /** @return string[] */
+    private static function splitOnAttributeDelimiter(string $string) : array
+    {
+        $splitAttributes = preg_split('@\s*[;]\s*@', $string);
+
+        assert(is_array($splitAttributes));
+
+        return array_filter($splitAttributes);
+    }
+
     private function addSessionCookie(ResponseInterface $response, string $sessionId): ResponseInterface
     {
         $params = session_get_cookie_params();
 
-        $setCookie = SetCookie::create(session_name())
-            ->withValue($sessionId)
+        $cookie = (new Cookie(session_name(), $sessionId))
             ->withPath($params['path'])
             ->withDomain($params['domain'])
             ->withSecure($params['secure'])
-            ->withHttpOnly($params['httponly'])
-        ;
+            ->withHttpOnly($params['httponly']);
 
         if ($params['lifetime'] > 0) {
-            $setCookie = $setCookie->withExpires(time() + $params['lifetime']);
+            $cookie = $cookie->withExpires(\DateTime::createFromFormat('U', time() + $params['lifetime']));
         }
 
         if ($params['samesite']) {
-            $setCookie = $setCookie->withSameSite(SameSite::fromString($params['samesite']));
+            $cookie = $cookie->withSameSite($params['samesite']);
         }
 
-        return FigResponseCookies::set($response, $setCookie);
+        return $cookie->addToResponse($response);
     }
 }
