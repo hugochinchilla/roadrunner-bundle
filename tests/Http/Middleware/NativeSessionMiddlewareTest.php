@@ -2,11 +2,11 @@
 
 namespace Tests\Baldinof\RoadRunnerBundle\Http\Middleware;
 
+use Yiisoft\Cookies\Cookie;
+use Yiisoft\Cookies\CookieCollection;
 use function Baldinof\RoadRunnerBundle\consumes;
 use Baldinof\RoadRunnerBundle\Exception\HeadersAlreadySentException;
 use Baldinof\RoadRunnerBundle\Http\Middleware\NativeSessionMiddleware;
-use Dflydev\FigCookies\FigResponseCookies;
-use Dflydev\FigCookies\Modifier\SameSite;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
@@ -65,14 +65,14 @@ class NativeSessionMiddlewareTest extends TestCase
 
         $response = $this->process($this->emptyRequest());
 
-        $cookie = FigResponseCookies::get($response, session_name());
+        $cookie = CookieCollection::fromResponse($response)->get(session_name());
 
         $this->assertEquals($cookie->getPath(), '/hello');
         $this->assertEquals($cookie->getDomain(), 'example.org');
-        $this->assertTrue($cookie->getSecure());
-        $this->assertTrue($cookie->getHttpOnly());
-        $this->assertEquals(SameSite::strict(), $cookie->getSameSite());
-        $this->assertEquals($now + $lifetime, $cookie->getExpires());
+        $this->assertTrue($cookie->isSecure());
+        $this->assertTrue($cookie->isHttpOnly());
+        $this->assertEquals(Cookie::SAME_SITE_STRICT, $cookie->getSameSite());
+        $this->assertEquals($now + $lifetime, $cookie->getExpires()->format('U'));
     }
 
     /**
